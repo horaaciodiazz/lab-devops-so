@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v6
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Correr tests
+        run: npm test
+
+      - name: Empaquetar la aplicación
+        run: zip -r ../app-build.zip . -x "node_modules/*"
+
+      - name: Publicar artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: app-build
+          path: app-build.zip
