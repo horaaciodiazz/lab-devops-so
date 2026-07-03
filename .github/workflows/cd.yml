@@ -1,0 +1,53 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+    branches: [main]
+
+permissions:
+  actions: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v6
+
+      - name: Descargar el artifact generado por CI
+        uses: actions/download-artifact@v6
+        with:
+          name: app-build
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configurar la clave SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Copiar el build al servidor
+        run: scp -i ~/.ssh/deploy_key app-build.zip ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/app-build.zip
+
+      - name: Ejecutar el script de despliegue remoto
+        run: ssh -i ~/.ssh/deploy_key ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -s' < pipeline/deploy.sh
+
+      - name: Verificar el despliegue
+        run: |
+          for i in $(seq 1 10); do
+            if curl -sf http://${{ secrets.SSH_HOST }}:8080/health; then
+              echo "Despliegue verificado correctamente."
+              exit 0
+            fi
+            echo "Intento $i: el servicio todavia no responde, esperando..."
+            sleep 3
+          done
+          echo "El servicio no respondio despues de varios intentos."
+          exit 1
